@@ -618,9 +618,10 @@ Supported keys:
   maintenance.threshold       Commit count threshold (default: 1000)
 
   Lifecycle (Dolt data maintenance):
-  lifecycle.reaper.enabled     Enable/disable wisp reaper (true/false)
-  lifecycle.reaper.interval    Reaper check interval (default: 30m)
-  lifecycle.reaper.delete_age  Delete closed wisps after this duration (default: 168h / 7d)
+  lifecycle.reaper.enabled          Enable/disable wisp reaper (true/false)
+  lifecycle.reaper.interval         Reaper check interval (default: 30m)
+  lifecycle.reaper.delete_age       Delete closed wisps after this duration (default: 168h / 7d)
+  lifecycle.reaper.alert_threshold  Open wisp count before Dog escalates (default: 500)
   lifecycle.compactor.enabled  Enable/disable compactor dog (true/false)
   lifecycle.compactor.interval Compactor check interval (default: 24h)
   lifecycle.compactor.threshold Commit count before compaction (default: 500)
@@ -662,9 +663,10 @@ Supported keys:
   maintenance.threshold       Commit count threshold
 
   Lifecycle (Dolt data maintenance):
-  lifecycle.reaper.enabled     Wisp reaper enabled (true/false)
-  lifecycle.reaper.interval    Reaper check interval
-  lifecycle.reaper.delete_age  Duration before closed wisps are deleted
+  lifecycle.reaper.enabled          Wisp reaper enabled (true/false)
+  lifecycle.reaper.interval         Reaper check interval
+  lifecycle.reaper.delete_age       Duration before closed wisps are deleted
+  lifecycle.reaper.alert_threshold  Open wisp count before Dog escalates
   lifecycle.compactor.enabled  Compactor dog enabled (true/false)
   lifecycle.compactor.interval Compactor check interval
   lifecycle.compactor.threshold Commit count threshold for compaction
@@ -1019,6 +1021,16 @@ func setLifecycleConfig(townRoot, key, value string) error {
 		}
 		patrolConfig.Patrols.WispReaper.DeleteAgeStr = value
 
+	case "lifecycle.reaper.alert_threshold":
+		n, err := strconv.Atoi(value)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("invalid value for %s: %q (expected positive integer)", key, value)
+		}
+		if patrolConfig.Patrols.WispReaper == nil {
+			patrolConfig.Patrols.WispReaper = &daemon.WispReaperConfig{Enabled: true}
+		}
+		patrolConfig.Patrols.WispReaper.AlertThreshold = n
+
 	// Compactor
 	case "lifecycle.compactor.enabled":
 		b, err := parseBool(value)
@@ -1098,7 +1110,7 @@ func setLifecycleConfig(townRoot, key, value string) error {
 		patrolConfig.Patrols.DoltBackup.IntervalStr = value
 
 	default:
-		return fmt.Errorf("unknown lifecycle key: %q\n\nSupported lifecycle keys:\n  lifecycle.reaper.enabled\n  lifecycle.reaper.interval\n  lifecycle.reaper.delete_age\n  lifecycle.compactor.enabled\n  lifecycle.compactor.interval\n  lifecycle.compactor.threshold\n  lifecycle.doctor.enabled\n  lifecycle.doctor.interval\n  lifecycle.backup.enabled\n  lifecycle.backup.interval", key)
+		return fmt.Errorf("unknown lifecycle key: %q\n\nSupported lifecycle keys:\n  lifecycle.reaper.enabled\n  lifecycle.reaper.interval\n  lifecycle.reaper.delete_age\n  lifecycle.reaper.alert_threshold\n  lifecycle.compactor.enabled\n  lifecycle.compactor.interval\n  lifecycle.compactor.threshold\n  lifecycle.doctor.enabled\n  lifecycle.doctor.interval\n  lifecycle.backup.enabled\n  lifecycle.backup.interval", key)
 	}
 
 	if err := daemon.SavePatrolConfig(townRoot, patrolConfig); err != nil {
@@ -1135,6 +1147,13 @@ func getLifecycleConfig(townRoot, key string) error {
 			value = patrolConfig.Patrols.WispReaper.DeleteAgeStr
 		} else {
 			value = "168h (default, 7 days)"
+		}
+
+	case "lifecycle.reaper.alert_threshold":
+		if patrolConfig != nil && patrolConfig.Patrols != nil && patrolConfig.Patrols.WispReaper != nil && patrolConfig.Patrols.WispReaper.AlertThreshold > 0 {
+			value = strconv.Itoa(patrolConfig.Patrols.WispReaper.AlertThreshold)
+		} else {
+			value = "500 (default)"
 		}
 
 	// Compactor
@@ -1192,7 +1211,7 @@ func getLifecycleConfig(townRoot, key string) error {
 		}
 
 	default:
-		return fmt.Errorf("unknown lifecycle key: %q\n\nSupported lifecycle keys:\n  lifecycle.reaper.enabled\n  lifecycle.reaper.interval\n  lifecycle.reaper.delete_age\n  lifecycle.compactor.enabled\n  lifecycle.compactor.interval\n  lifecycle.compactor.threshold\n  lifecycle.doctor.enabled\n  lifecycle.doctor.interval\n  lifecycle.backup.enabled\n  lifecycle.backup.interval", key)
+		return fmt.Errorf("unknown lifecycle key: %q\n\nSupported lifecycle keys:\n  lifecycle.reaper.enabled\n  lifecycle.reaper.interval\n  lifecycle.reaper.delete_age\n  lifecycle.reaper.alert_threshold\n  lifecycle.compactor.enabled\n  lifecycle.compactor.interval\n  lifecycle.compactor.threshold\n  lifecycle.doctor.enabled\n  lifecycle.doctor.interval\n  lifecycle.backup.enabled\n  lifecycle.backup.interval", key)
 	}
 
 	fmt.Println(value)

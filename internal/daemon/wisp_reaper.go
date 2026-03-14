@@ -19,7 +19,8 @@ const (
 	// Closed wisps older than this are permanently deleted. Formula var: purge_age.
 	defaultWispDeleteAge = 3 * 24 * time.Hour
 	// Alert threshold: if open wisp count exceeds this, the Dog should escalate.
-	wispAlertThreshold = 500
+	// Configurable via gt config set lifecycle.reaper.alert_threshold.
+	defaultWispAlertThreshold = 500
 	// Closed mail older than this is permanently deleted. Formula var: mail_delete_age.
 	defaultMailDeleteAge = 3 * 24 * time.Hour
 	// Issues stale longer than this are auto-closed. Formula var: stale_issue_age.
@@ -28,12 +29,13 @@ const (
 
 // WispReaperConfig holds configuration for the wisp_reaper patrol.
 type WispReaperConfig struct {
-	Enabled      bool     `json:"enabled"`
-	DryRun       bool     `json:"dry_run,omitempty"`
-	IntervalStr  string   `json:"interval,omitempty"`
-	MaxAgeStr    string   `json:"max_age,omitempty"`
-	DeleteAgeStr string   `json:"delete_age,omitempty"`
-	Databases    []string `json:"databases,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	DryRun         bool     `json:"dry_run,omitempty"`
+	IntervalStr    string   `json:"interval,omitempty"`
+	MaxAgeStr      string   `json:"max_age,omitempty"`
+	DeleteAgeStr   string   `json:"delete_age,omitempty"`
+	AlertThreshold int      `json:"alert_threshold,omitempty"`
+	Databases      []string `json:"databases,omitempty"`
 }
 
 // wispReaperInterval returns the configured interval, or the default (1h).
@@ -58,6 +60,16 @@ func wispReaperMaxAge(config *DaemonPatrolConfig) time.Duration {
 		}
 	}
 	return defaultWispMaxAge
+}
+
+// wispAlertThreshold returns the configured alert threshold, or the default (500).
+func wispAlertThreshold(config *DaemonPatrolConfig) int {
+	if config != nil && config.Patrols != nil && config.Patrols.WispReaper != nil {
+		if config.Patrols.WispReaper.AlertThreshold > 0 {
+			return config.Patrols.WispReaper.AlertThreshold
+		}
+	}
+	return defaultWispAlertThreshold
 }
 
 // wispDeleteAge returns the configured delete age, or the default (7 days).
@@ -90,7 +102,7 @@ func (d *Daemon) reapWisps() {
 		"purge_age":       deleteAge.String(),
 		"stale_issue_age": defaultStaleIssueAge.String(),
 		"mail_delete_age": defaultMailDeleteAge.String(),
-		"alert_threshold": fmt.Sprintf("%d", wispAlertThreshold),
+		"alert_threshold": fmt.Sprintf("%d", wispAlertThreshold(d.patrolConfig)),
 		"dolt_port":       fmt.Sprintf("%d", d.doltServerPort()),
 	}
 
@@ -256,9 +268,10 @@ func (d *Daemon) reapWispsInline(config *WispReaperConfig, maxAge, deleteAge tim
 	}
 
 	// Step 5: Report
-	if totalOpen > wispAlertThreshold {
+	threshold := wispAlertThreshold(d.patrolConfig)
+	if totalOpen > threshold {
 		d.logger.Printf("wisp_reaper: WARNING: %d open wisps exceed threshold %d — investigate wisp lifecycle",
-			totalOpen, wispAlertThreshold)
+			totalOpen, threshold)
 	}
 	d.logger.Printf("wisp_reaper: cycle complete — reaped=%d purged=%d mail_purged=%d auto_closed=%d open=%d databases=%d dryRun=%v",
 		totalReaped, totalPurged, totalMailPurged, totalAutoClosed, totalOpen, len(databases), dryRun)
