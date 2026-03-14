@@ -13,6 +13,7 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -203,8 +204,7 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 
 	// Track per-agent-type health (working/zombie counts)
 	type agentHealth struct {
-		total   int
-		working int
+		total int
 	}
 	healthByType := map[AgentType]*agentHealth{
 		AgentWitness:  {},
@@ -238,10 +238,6 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 		// Track agent health (skip Mayor and Crew)
 		if health := healthByType[agent.Type]; health != nil {
 			health.total++
-			// Detect working state via ✻ symbol
-			if isSessionWorking(t, s) {
-				health.working++
-			}
 		}
 
 		// Track deacon presence (just the icon, no count)
@@ -250,11 +246,18 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 		}
 	}
 
-	// Get operational state for each rig
+	// Get operational state for each rig (file-only, no Dolt query)
 	for rigName, status := range rigStatuses {
-		opState, _ := getRigOperationalState(townRoot, rigName)
-		if opState == "PARKED" || opState == "DOCKED" {
-			status.opState = opState
+		wispCfg := wisp.NewConfig(townRoot, rigName)
+		if s := wispCfg.GetString("status"); s != "" {
+			switch strings.ToLower(s) {
+			case "parked":
+				status.opState = "PARKED"
+			case "docked":
+				status.opState = "DOCKED"
+			default:
+				status.opState = "OPERATIONAL"
+			}
 		} else {
 			status.opState = "OPERATIONAL"
 		}
@@ -276,7 +279,7 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 			continue
 		}
 		icon := AgentTypeIcons[agentType]
-		agentParts = append(agentParts, fmt.Sprintf("%d/%d %s", health.working, health.total, icon))
+		agentParts = append(agentParts, fmt.Sprintf("%d %s", health.total, icon))
 	}
 	if len(agentParts) > 0 {
 		parts = append(parts, strings.Join(agentParts, " "))
@@ -364,25 +367,6 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 
 	if len(rigParts) > 0 {
 		parts = append(parts, strings.Join(rigParts, " "))
-	}
-
-	// Priority 1: Check for hooked work (town beads for mayor)
-	hookedWork := ""
-	if townRoot != "" {
-		hookedWork = getHookedWork("mayor", 40, townRoot)
-	}
-	if hookedWork != "" {
-		parts = append(parts, fmt.Sprintf("🪝 %s", hookedWork))
-	} else if townRoot != "" {
-		// Priority 2: Fall back to mail preview
-		unread, subject := getMailPreviewWithRoot("mayor/", 45, townRoot)
-		if unread > 0 {
-			if subject != "" {
-				parts = append(parts, fmt.Sprintf("\U0001F4EC %s", subject))
-			} else {
-				parts = append(parts, fmt.Sprintf("\U0001F4EC %d", unread))
-			}
-		}
 	}
 
 	fmt.Print(strings.Join(parts, " | ") + " |")
@@ -614,27 +598,6 @@ func runRefineryStatusLine(t *tmux.Tmux, rigName string) error {
 
 	fmt.Print(strings.Join(parts, " | ") + " |")
 	return nil
-}
-
-// isSessionWorking detects if a Claude Code session is actively working.
-// Returns true if the ✻ symbol is visible in the pane (indicates Claude is processing).
-// Returns false for idle sessions (showing ❯ prompt) or if state cannot be determined.
-func isSessionWorking(t *tmux.Tmux, session string) bool {
-	// Capture last few lines of the pane
-	lines, err := t.CapturePaneLines(session, 5)
-	if err != nil || len(lines) == 0 {
-		return false
-	}
-
-	// Check all captured lines for the working indicator
-	// ✻ appears in Claude's status line when actively processing
-	for _, line := range lines {
-		if strings.Contains(line, "✻") {
-			return true
-		}
-	}
-
-	return false
 }
 
 // getMailPreviewWithRoot returns unread count and a truncated subject of the first unread message,

@@ -2698,8 +2698,7 @@ func (t *Tmux) SetDynamicStatus(session string) error {
 	if _, err := t.run("set-option", "-t", session, "status-right-length", "80"); err != nil {
 		return err
 	}
-	// Set faster refresh for more responsive status
-	if _, err := t.run("set-option", "-t", session, "status-interval", "5"); err != nil {
+	if _, err := t.run("set-option", "-t", session, "status-interval", "30"); err != nil {
 		return err
 	}
 	_, err := t.run("set-option", "-t", session, "status-right", right)
