@@ -33,6 +33,15 @@ const (
 	surgicalMaxRetries = 1
 )
 
+// liveWriteTables are tables that receive continuous writes from the daemon
+// (wisp writer, event logger). During compaction, these tables legitimately
+// gain rows between pre-flight and post-flight counts. The integrity check
+// uses a never-shrink check (post >= pre) for these instead of strict equality.
+var liveWriteTables = map[string]bool{
+	"wisps":       true,
+	"wisp_events": true,
+}
+
 // CompactorDogConfig holds configuration for the compactor_dog patrol.
 type CompactorDogConfig struct {
 	Enabled     bool     `json:"enabled"`
@@ -311,7 +320,12 @@ func (d *Daemon) compactDatabase(dbName string) error {
 		if !ok {
 			return fmt.Errorf("integrity check: table %q missing after compaction", table)
 		}
-		if preCount != postCount {
+		if liveWriteTables[table] {
+			// Live-write tables may gain rows during compaction — only check they didn't shrink.
+			if postCount < preCount {
+				return fmt.Errorf("integrity check: live table %q shrank: pre=%d post=%d", table, preCount, postCount)
+			}
+		} else if preCount != postCount {
 			return fmt.Errorf("integrity check: table %q count mismatch: pre=%d post=%d", table, preCount, postCount)
 		}
 	}
@@ -478,7 +492,12 @@ func (d *Daemon) surgicalRebaseOnce(dbName string, keepRecent int) error {
 				d.surgicalCleanup(db, baseBranch, workBranch)
 				return fmt.Errorf("integrity: table %q missing after rebase", table)
 			}
-			if preCount != postCount {
+			if liveWriteTables[table] {
+				if postCount < preCount {
+					d.surgicalCleanup(db, baseBranch, workBranch)
+					return fmt.Errorf("integrity: live table %q shrank: pre=%d post=%d", table, preCount, postCount)
+				}
+			} else if preCount != postCount {
 				d.surgicalCleanup(db, baseBranch, workBranch)
 				return fmt.Errorf("integrity: table %q count mismatch: pre=%d post=%d", table, preCount, postCount)
 			}
