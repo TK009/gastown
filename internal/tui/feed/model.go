@@ -244,7 +244,7 @@ func (m *Model) fetchConvoys() tea.Cmd {
 
 // convoyRefreshTick returns a command that schedules the next convoy refresh
 func (m *Model) convoyRefreshTick() tea.Cmd {
-	return tea.Tick(10*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(60*time.Second, func(t time.Time) tea.Msg {
 		return convoyUpdateMsg{} // Empty state triggers a refresh
 	})
 }

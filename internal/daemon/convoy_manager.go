@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	defaultStrandedScanInterval = 30 * time.Second
-	eventPollInterval    = 5 * time.Second
-	eventPollMaxBackoff = 60 * time.Second
+	defaultStrandedScanInterval = 5 * time.Minute
+	eventPollInterval    = 30 * time.Second
+	eventPollMaxBackoff = 5 * time.Minute
 
 	// convoyGracePeriod is how long after creation a convoy is immune from
 	// auto-close. This prevents a race where the daemon's stranded scan
