@@ -58,8 +58,10 @@ const (
 	BdCommandTimeout = 30 * time.Second
 
 	// BdSubprocessTimeout is the timeout for bd subprocess calls in TUI panels.
+	// Cross-rig dependency lookups (e.g., convoy tracked issues) can take 5-10s
+	// due to prefix-based routing through multiple Dolt databases.
 	// Configurable via operational.session.bd_subprocess_timeout.
-	BdSubprocessTimeout = 5 * time.Second
+	BdSubprocessTimeout = 15 * time.Second
 
 	// DialogPollInterval is the interval between pane content checks when
 	// polling for startup dialogs (workspace trust, bypass permissions).
