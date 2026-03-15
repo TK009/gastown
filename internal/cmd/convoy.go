@@ -1440,7 +1440,9 @@ func findStrandedConvoys(townBeads string) ([]strandedConvoyInfo, error) {
 		// Town-level beads (hq- prefix with path=".") are excluded because
 		// they can't be dispatched via gt sling -- they're handled by the deacon.
 		// Non-slingable types (epics, convoys, etc.) are also excluded.
-		townRoot := filepath.Dir(townBeads)
+		// Note: townBeads IS the town root (from getTownBeadsDir/workspace.FindFromCwd),
+		// NOT a .beads subdirectory. Using filepath.Dir would go one level too high.
+		townRoot := townBeads
 
 		// Batch-check scheduling status for all tracked issues (single DB query).
 		var trackedIDs []string
@@ -1667,7 +1669,7 @@ func notifyConvoyCompletion(townBeads, convoyID, title string) {
 // notifyMayorSession pushes a convoy completion notification into the active
 // Mayor session via nudge, if convoy.notify_on_complete is enabled.
 func notifyMayorSession(townBeads, convoyID, title string) {
-	townRoot := filepath.Dir(townBeads) // townBeads = townRoot/.beads
+	townRoot := townBeads // townBeads is the town root from getTownBeadsDir
 	settingsPath := config.TownSettingsPath(townRoot)
 	settings, err := config.LoadOrCreateTownSettings(settingsPath)
 	if err != nil {
@@ -2310,9 +2312,8 @@ func (issue issueDetailsJSON) toIssueDetails() *issueDetails {
 // rigName: name of the rig (e.g., "claycantrell")
 // issueID: the issue ID to look up
 func getExternalIssueDetails(townBeads, rigName, issueID string) *issueDetails {
-	// Resolve rig directory path: town parent + rig name
-	townParent := filepath.Dir(townBeads)
-	rigDir := filepath.Join(townParent, rigName)
+	// Resolve rig directory path: townBeads is the town root from getTownBeadsDir
+	rigDir := filepath.Join(townBeads, rigName)
 
 	// Check if rig directory exists
 	if _, err := os.Stat(rigDir); os.IsNotExist(err) {
