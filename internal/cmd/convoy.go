@@ -707,9 +707,11 @@ func runConvoyCreate(cmd *cobra.Command, args []string) error {
 
 	// Notify address is stored in description (line 166-168) and read from there
 
-	// Run dep add from town root (parent of .beads) so bd routes correctly
-	// across rigs via routes.jsonl. Running from .beads breaks cross-rig routing.
-	townRoot := filepath.Dir(townBeads)
+	// Run dep add from town root so bd routes correctly across rigs via
+	// routes.jsonl. getTownBeadsDir() already returns the town root (not
+	// .beads), so use it directly — filepath.Dir() would go one level too
+	// high and lose the .beads directory (gt-3qo).
+	townRoot := townBeads
 
 	// Add 'tracks' relations for each tracked issue
 	trackedCount := 0
@@ -827,9 +829,10 @@ func runConvoyAdd(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s Reopened convoy %s\n", style.Bold.Render("↺"), convoyID)
 	}
 
-	// Run dep add from town root (parent of .beads) so bd routes correctly
-	// across rigs via routes.jsonl. Running from .beads breaks cross-rig routing.
-	townRoot := filepath.Dir(townBeads)
+	// Run dep add from town root so bd routes correctly across rigs via
+	// routes.jsonl. getTownBeadsDir() already returns the town root (not
+	// .beads), so use it directly (gt-3qo).
+	townRoot := townBeads
 
 	// Add 'tracks' relations for each issue
 	addedCount := 0
