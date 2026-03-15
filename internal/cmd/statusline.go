@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -16,6 +17,8 @@ import (
 	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
+
+const statusLineCacheTTL = 30 * time.Second
 
 var (
 	statusLineSession string
@@ -39,6 +42,42 @@ func init() {
 }
 
 func runStatusLine(cmd *cobra.Command, args []string) error {
+	// File-based cache: tmux re-evaluates #() on every pane output (not just
+	// status-interval), spawning a new process each time (~1/sec with active
+	// agents). Return cached result instantly when fresh enough.
+	if statusLineSession != "" {
+		cacheFile := filepath.Join(os.TempDir(), fmt.Sprintf("gt-statusline-%s.cache", statusLineSession))
+		if info, err := os.Stat(cacheFile); err == nil && time.Since(info.ModTime()) < statusLineCacheTTL {
+			if data, err := os.ReadFile(cacheFile); err == nil {
+				fmt.Print(string(data))
+				return nil
+			}
+		}
+		// Capture output to both stdout and cache file
+		old := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			return computeAndPrintStatusLine()
+		}
+		os.Stdout = w
+		runErr := computeAndPrintStatusLine()
+		w.Close()
+		os.Stdout = old
+		var buf strings.Builder
+		data := make([]byte, 4096)
+		n, _ := r.Read(data)
+		r.Close()
+		buf.Write(data[:n])
+		output := buf.String()
+		fmt.Print(output)
+		_ = os.WriteFile(cacheFile, []byte(output), 0o600)
+		return runErr
+	}
+
+	return computeAndPrintStatusLine()
+}
+
+func computeAndPrintStatusLine() error {
 	t := tmux.NewTmux()
 
 	// Get session environment
