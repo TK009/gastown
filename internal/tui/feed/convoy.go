@@ -57,8 +57,9 @@ func FetchConvoys(townRoot string) (*ConvoyState, error) {
 	}
 
 	for _, c := range openConvoys {
-		// Get detailed status for each convoy
-		convoy := enrichConvoy(townBeads, c)
+		// Get detailed status for each convoy.
+		// Pass townRoot for cross-rig dependency routing.
+		convoy := enrichConvoy(townRoot, c)
 		state.InProgress = append(state.InProgress, convoy)
 	}
 
@@ -67,7 +68,7 @@ func FetchConvoys(townRoot string) (*ConvoyState, error) {
 	if err == nil {
 		cutoff := time.Now().Add(-24 * time.Hour)
 		for _, c := range closedConvoys {
-			convoy := enrichConvoy(townBeads, c)
+			convoy := enrichConvoy(townRoot, c)
 			if !convoy.ClosedAt.IsZero() && convoy.ClosedAt.After(cutoff) {
 				state.Landed = append(state.Landed, convoy)
 			}
@@ -117,8 +118,9 @@ type convoyListItem struct {
 	ClosedAt  string `json:"closed_at,omitempty"`
 }
 
-// enrichConvoy adds tracked issue counts to a convoy
-func enrichConvoy(beadsDir string, item convoyListItem) Convoy {
+// enrichConvoy adds tracked issue counts to a convoy.
+// townRoot is the workspace root (not .beads) for cross-rig routing.
+func enrichConvoy(townRoot string, item convoyListItem) Convoy {
 	convoy := Convoy{
 		ID:     item.ID,
 		Title:  item.Title,
@@ -137,8 +139,9 @@ func enrichConvoy(beadsDir string, item convoyListItem) Convoy {
 		convoy.ClosedAt = t
 	}
 
-	// Get tracked issues and their status
-	tracked := getTrackedIssueStatus(beadsDir, item.ID)
+	// Get tracked issues and their status.
+	// Run from townRoot so bd's routing resolves cross-rig prefixes.
+	tracked := getTrackedIssueStatus(townRoot, item.ID)
 	convoy.Total = len(tracked)
 	for _, t := range tracked {
 		if t.Status == "closed" {
