@@ -1805,16 +1805,19 @@ func runConvoyStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("convoy '%s' not found", convoyID)
 	}
 
-	// Parse convoy data
+	// Parse convoy data — includes embedded dependencies from bd show --json,
+	// which already resolves cross-database deps. This avoids the expensive
+	// bd dep list call that was causing 5-10s latency per convoy status.
 	var convoys []struct {
-		ID          string   `json:"id"`
-		Title       string   `json:"title"`
-		Status      string   `json:"status"`
-		Description string   `json:"description"`
-		CreatedAt   string   `json:"created_at"`
-		ClosedAt    string   `json:"closed_at,omitempty"`
-		DependsOn   []string `json:"depends_on,omitempty"`
-		Labels      []string `json:"labels,omitempty"`
+		ID           string            `json:"id"`
+		Title        string            `json:"title"`
+		Status       string            `json:"status"`
+		Description  string            `json:"description"`
+		CreatedAt    string            `json:"created_at"`
+		ClosedAt     string            `json:"closed_at,omitempty"`
+		DependsOn    []string          `json:"depends_on,omitempty"`
+		Labels       []string          `json:"labels,omitempty"`
+		Dependencies []issueDependency `json:"dependencies,omitempty"`
 	}
 	if err := json.Unmarshal(showOut, &convoys); err != nil {
 		return fmt.Errorf("parsing convoy data: %w", err)
@@ -1829,7 +1832,17 @@ func runConvoyStatus(cmd *cobra.Command, args []string) error {
 	// Check if convoy is owned (caller-managed lifecycle)
 	isOwned := hasLabel(convoy.Labels, "gt:owned")
 
-	tracked, err := getTrackedIssues(townBeads, convoyID)
+	// Fast path: extract tracked issues from the already-fetched bd show
+	// dependencies when available. bd show --json embeds full dependency
+	// details for cross-database deps, avoiding the expensive bd dep list
+	// call (3-6s). Fall back to the full getTrackedIssues path when the
+	// show response doesn't include embedded dependencies.
+	var tracked []trackedIssueInfo
+	if len(convoy.Dependencies) > 0 {
+		tracked, err = trackedFromShowDeps(townBeads, convoy.Dependencies)
+	} else {
+		tracked, err = getTrackedIssues(townBeads, convoyID)
+	}
 	if err != nil {
 		return fmt.Errorf("getting tracked issues for %s: %w", convoyID, err)
 	}
@@ -2305,6 +2318,49 @@ func getTrackedIssues(townBeads, convoyID string) ([]trackedIssueInfo, error) {
 	return tracked, nil
 }
 
+// trackedFromShowDeps builds tracked issue info directly from the dependencies
+// already embedded in a bd show --json response. This avoids the expensive
+// bd dep list call (which does cross-database resolution at ~3-6s) since
+// bd show already resolves and embeds full dependency details.
+func trackedFromShowDeps(townBeads string, deps []issueDependency) ([]trackedIssueInfo, error) {
+	// Filter to tracks-type dependencies only
+	var openIDs []string
+	var infos []trackedIssueInfo
+	for _, dep := range deps {
+		if dep.DependencyType != "tracks" {
+			continue
+		}
+		id := beads.ExtractIssueID(dep.ID)
+		if id == "" {
+			id = dep.ID
+		}
+		info := trackedIssueInfo{
+			ID:        id,
+			Title:     dep.Title,
+			Status:    dep.Status,
+			Type:      dep.DependencyType,
+			IssueType: dep.IssueType,
+			Assignee:  dep.Assignee,
+			Labels:    dep.Labels,
+		}
+		infos = append(infos, info)
+		if dep.Status != "closed" {
+			openIDs = append(openIDs, id)
+		}
+	}
+
+	// Look up workers for open issues
+	workersMap := getWorkersForIssues(openIDs)
+	for i := range infos {
+		if worker, ok := workersMap[infos[i].ID]; ok {
+			infos[i].Worker = worker.Worker
+			infos[i].WorkerAge = worker.Age
+		}
+	}
+
+	return infos, nil
+}
+
 // bdDepListTracked runs `bd dep list <convoyID> --direction=down --type=tracks --json`
 // and returns the tracked issue IDs (unwrapped from external: prefixes).
 func bdDepListTracked(dir, convoyID string) ([]string, error) {
@@ -2367,9 +2423,13 @@ func bdShowTrackedDeps(dir, convoyID string) ([]string, error) {
 }
 
 type issueDependency struct {
-	ID             string `json:"id"`
-	Status         string `json:"status"`
-	DependencyType string `json:"dependency_type"`
+	ID             string   `json:"id"`
+	Title          string   `json:"title,omitempty"`
+	Status         string   `json:"status"`
+	IssueType      string   `json:"issue_type,omitempty"`
+	Assignee       string   `json:"assignee,omitempty"`
+	Labels         []string `json:"labels,omitempty"`
+	DependencyType string   `json:"dependency_type"`
 }
 
 type issueDetailsJSON struct {
